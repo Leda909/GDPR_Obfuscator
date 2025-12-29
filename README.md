@@ -1,5 +1,8 @@
-# GDPR_anonymization
+# Launchpad GDPR Obfuscator | Anonymizator ETL pipeline
 
+
+
+`python -m pytest tests/test_obfuscator.py -vv -s --color=yes`
 
 # Resources
 

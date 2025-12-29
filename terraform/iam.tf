@@ -78,24 +78,6 @@ resource "aws_iam_role_policy_attachment" "lambda_s3_write_policy_attachment" {
   policy_arn = aws_iam_policy.lambda_s3_coudewatch_policy.arn
 }
 
-
-
-# ------------------------------
-# S3 bucket notification: when a new source file is uploaded to the "plain data bucket", trigger the obfuscator lambda
-# ------------------------------
-# resource "aws_s3_bucket_notification" "plain_data_bucket_notification" {
-#   bucket = aws_s3_bucket.plain_data_bucket.id
-
-#   lambda_function {
-#     lambda_function_arn = aws_lambda_function.gdpr_obfuscator_lambda.arn
-#     events              = ["s3:ObjectCreated:*"] # Trigger on all object creation events (upload, copy, etc.)
-#     filter_suffix       = ".csv"     # Optional for MVP to only trigger for .csv files
-#   }
-
-#   # Ensure the lambda permission set up before create the notification
-#   depends_on = [aws_lambda_permission.allow_s3_invoke_obfuscator_lambda]
-# } 
-
 #------------------------------
 # Enable the source bucket to send events to EventBridge
 # ------------------------------
@@ -119,7 +101,13 @@ resource "aws_cloudwatch_event_rule" "s3_object_upload_rule" {
   "detail-type": ["Object Created"],
   "detail": {
     "bucket": { "name": ["${aws_s3_bucket.plain_data_bucket.id}"]}
-    "object": { "key": [ { "suffix": ".csv" } ] }
+    "object": { 
+      "key": [ 
+        { "suffix": ".csv" },
+        { "suffix": ".json" },
+        { "suffix": ".parquet" } 
+      ]
+    }
   }
 }
 PATTERN

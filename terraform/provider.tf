@@ -10,7 +10,7 @@ terraform {
   backend "s3" {
     bucket = "s3-obfuscator-terraform-state"
     key    = "folder/terraform-state-file"
-    region = var.region
+    region = "eu-west-2"
   }
 
 }
