@@ -66,10 +66,19 @@ audit:
 
 # Run coverage check and create a coverage.txt file
 check-coverage-txt:
+	@echo ">>> Generating Integrated Quality & Security Report..."
 	$(call execute_in_env, PYTHONPATH=$(PYTHONPATH) $(PYTHON_INTERPRETER) -m coverage run -m pytest tests)
+	@echo "--- UNIT TEST COVERAGE REPORT ---" > coverage.txt
 	$(call execute_in_env, $(PYTHON_INTERPRETER) -m coverage report -m > coverage.txt)
+
+	@echo -e "\n--- SECURITY SCAN REPORT (BANDIT) ---" >> coverage.txt
+	-$(call execute_in_env, bandit -lll -r src/ >> coverage.txt 2>&1)
+
+	@echo -e "\n--- VULNERABILITY AUDIT REPORT (PIP-AUDIT) ---" >> coverage.txt
+	-$(call execute_in_env, pip-audit >> coverage.txt 2>&1)
+
 	@rm -f .coverage
-	@echo "Coverage report as coverage.txt created, found in root!"
+	@echo "Integrated report as coverage.txt created successfully!"
 
 # Run all tests in one
 run-checks: unit-test run-black security-test audit lint
