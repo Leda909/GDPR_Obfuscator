@@ -106,6 +106,7 @@ def obfuscate_data(s3_source_path, pii_fields):
                 logger.info(f"obfuscated column: {col}")
         if count_obfuscated_col == 0:
             logger.warning("No PII columns found to obfuscate.")
+            raise Exception("No PII columns found to obfuscate.")
 
         # 3. Convert back to Byte Stream
         output_buffer = BytesIO()

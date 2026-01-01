@@ -1,6 +1,6 @@
 Name                       Stmts   Miss  Cover   Missing
 --------------------------------------------------------
-src\obfuscator.py             63      0   100%
-tests\test_obfuscator.py     147      7    95%   67, 89, 138, 166, 213, 233, 327
+src\obfuscator.py             64      0   100%
+tests\test_obfuscator.py     151      0   100%
 --------------------------------------------------------
-TOTAL                        210      7    97%
+TOTAL                        215      0   100%

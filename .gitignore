@@ -1,6 +1,7 @@
 # test data files
 *data
 *assets
+code_notes.md
 
 # terraform 
 terraform.tfvars

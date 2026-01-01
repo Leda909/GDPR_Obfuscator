@@ -3,8 +3,6 @@ moto
 awswrangler
 pandas
 boto3
-python-hcl2
-pyarrow
 black
 flake8
 bandit

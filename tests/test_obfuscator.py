@@ -2,8 +2,8 @@ import pytest
 import boto3
 import awswrangler as wr
 import pandas as pd
+import pandas.testing as pdt
 import os
-import hcl2
 from moto import mock_aws
 from src.obfuscator import lambda_handler
 import time
@@ -26,12 +26,36 @@ def aws_credentials():
     os.environ["AWS_DEFAULT_REGION"] = "eu-west-2"
 
 
-# Helper function to read PII fields from terraform.tfvars
-def get_pii_from_terraform():
-    with open("terraform/terraform.tfvars", "r") as f:
-        tf_vars = hcl2.load(f)
-        # 'pii_fields' is a list in the tfvars file
-        return ",".join(tf_vars["pii_fields"])
+@pytest.fixture
+def sample_csv_data():
+    """Base csv sample data for tests."""
+    headers = [
+        "student_id",
+        "name",
+        "course",
+        "cohort",
+        "graduation_date",
+        "email_address",
+    ]
+    data = [
+        [
+            1234,
+            "John Smith",
+            "Software",
+            "2024-03-31",
+            "2024-03-31",
+            "j.smith@email.com",
+        ],
+        [
+            5678,
+            "Jane Doe",
+            "Data Science",
+            "2024-01-15",
+            "2024-01-15",
+            "j.doe@email.com",
+        ],
+    ]
+    return pd.DataFrame(data, columns=headers)
 
 
 @mock_aws
@@ -40,9 +64,42 @@ class TestObfuscator:
         # ... start of the test ...
         start_time = time.time()
 
-        # 1a. SETUP: Mock Buckets
-        source_bucket = "gdpr-source-data-bucket-test"
-        dest_bucket = "gdpr-obfuscated-data-bucket-test"
+        # 1. Prepare test data
+        headers = [
+            "student_id",
+            "name",
+            "course",
+            "cohort",
+            "graduation_date",
+            "email_address",
+        ]
+        test_input = [
+            [
+                1234,
+                "John Smith",
+                "Software",
+                "2024-03-31",
+                "2024-03-31",
+                "j.smith@email.com",
+            ],
+            [
+                5678,
+                "Jane Doe",
+                "Data Science",
+                "2024-01-15",
+                "2024-01-15",
+                "j.doe@email.com",
+            ],
+        ]
+        expected_output = [
+            [1234, "*****", "Software", "2024-03-31", "2024-03-31", "*****"],
+            [5678, "*****", "Data Science", "2024-01-15", "2024-01-15", "*****"],
+        ]
+
+        # 2. SETUP Mock Buckets and Env Variables
+        source_key = "test_data.csv"
+        source_bucket = "gdpr-source-bucket-test"
+        dest_bucket = "gdpr-obfuscated-bucket-test"
 
         s3_client.create_bucket(
             Bucket=source_bucket,
@@ -53,21 +110,14 @@ class TestObfuscator:
             CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
         )
 
-        # 1b. Configure Environment variables for the Lambda function
         os.environ["DESTINATION_BUCKET"] = dest_bucket
-        # Configure PII fields for dummy.csv has 'name' and 'email_address'
-        os.environ["PII_FIELDS"] = get_pii_from_terraform()
+        os.environ["PII_FIELDS"] = "name,email_address"
 
-        # 2. SEED: Load your ACTUAL local file and upload it to the mock S3
-        source_key = "dummy.csv"
-        local_file_path = f"data/raw/{source_key}"
-
-        # Ensure the directory exists to avoid FileNotFoundError during the test
-        if not os.path.exists(local_file_path):
-            pytest.fail("Local test file not found.")
-
-        df_local = pd.read_csv(local_file_path)
-        wr.s3.to_csv(df_local, f"s3://{source_bucket}/{source_key}", index=False)
+        # Create input DataFrame and upload to Mock S3
+        df_input = pd.DataFrame(test_input, columns=headers)
+        wr.s3.to_csv(
+            df=df_input, path=f"s3://{source_bucket}/{source_key}", index=False
+        )
 
         # 3. ACT: Trigger the handler with EventBridge style event
         mock_event = {
@@ -75,43 +125,66 @@ class TestObfuscator:
         }
 
         lambda_handler(mock_event, None)
+
+        # 4. ASSERT: Read the result from the dest_bucket
+        result_df = wr.s3.read_csv(f"s3://{dest_bucket}/obfuscated/{source_key}")
+
         # ... end of the test ...
         end_time = time.time()
 
-        # 4. ASSERT: Read the result from the destination bucket
-        result_df = wr.s3.read_csv(f"s3://{dest_bucket}/obfuscated/{source_key}")
-
-        # 5. If not exsist, create the local "obfuscated" folder, and save the result there
-        output_dir = "data/obfuscated"
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
-
-        # Save the result locally for manual inspection
-        output_path = os.path.join(output_dir, "obfuscated_result.csv")
-        result_df.to_csv(output_path, index=False)
-
-        print(f"\nSuccess! Find the Obfuscated file here: {output_path}")
-
-        # 6. ASSERT: Validate that PII fields are obfuscated
-        # Check that PII fields are masked and the columns defined
-        # in PII_FIELDS env variable as written in terraform.tfvars
-        # hardcoded here for clarity:["name", "email_address"]
-        for col in ["name", "email_address"]:
-            if col in result_df.columns:
-                assert all(
-                    result_df[col] == "*****"
-                ), f"Column {col} was not obfuscated"
-
-        # Check that one non-PII field (e.g., student_id) is still the same as original
-        if "student_id" in result_df.columns:
-            assert result_df["student_id"][0] == df_local["student_id"][0]
+        expected_df = pd.DataFrame(expected_output, columns=headers)
+        # Compare result with the expected output dataframe
+        pdt.assert_frame_equal(result_df, expected_df)
+        # Additional specific assertions
+        assert result_df["name"][1] == "*****"
+        assert result_df["student_id"][0] == 1234
+        assert result_df["course"][1] == "Data Science"
 
         assert (end_time - start_time) < 60  # Test should complete within 60 seconds
 
     def test_lambda_obfuscates_local_json_file(self, s3_client):
-        # 1a. SETUP: Mock Buckets
-        source_bucket = "gdpr-source-data-bucket-test"
-        dest_bucket = "gdpr-obfuscated-data-bucket-test"
+        # 1. Prepare test data
+        test_input = [
+            {
+                "student_id": 1234,
+                "name": "John Smith",
+                "course": "Software",
+                "cohort": "2024-03-31",
+                "graduation_date": "2024-03-31",
+                "email_address": "j.smith@email.com",
+            },
+            {
+                "student_id": 5678,
+                "name": "Jane Doe",
+                "course": "Data Science",
+                "cohort": "2024-01-15",
+                "graduation_date": "2024-01-15",
+                "email_address": "j.doe@email.com",
+            },
+        ]
+        expected_output = [
+            {
+                "student_id": 1234,
+                "name": "*****",
+                "course": "Software",
+                "cohort": "2024-03-31",
+                "graduation_date": "2024-03-31",
+                "email_address": "*****",
+            },
+            {
+                "student_id": 5678,
+                "name": "*****",
+                "course": "Data Science",
+                "cohort": "2024-01-15",
+                "graduation_date": "2024-01-15",
+                "email_address": "*****",
+            },
+        ]
+
+        # 2. SETUP Mock Buckets and Env Variables
+        source_key = "test_data.json"
+        source_bucket = "gdpr-source-bucket-test"
+        dest_bucket = "gdpr-obfuscated-bucket-test"
 
         s3_client.create_bucket(
             Bucket=source_bucket,
@@ -122,26 +195,16 @@ class TestObfuscator:
             CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
         )
 
-        # 1b. Configure Environment variables for the Lambda function
         os.environ["DESTINATION_BUCKET"] = dest_bucket
-        # Configure PII fields for dummy.csv has 'name' and 'email_address'
-        os.environ["PII_FIELDS"] = get_pii_from_terraform()
+        os.environ["PII_FIELDS"] = "name,email_address"
 
-        # 2. SEED: Load your ACTUAL local file and upload it to the mock S3
-        source_key = "dummy.json"
-        local_file_path = f"data/raw/{source_key}"
-
-        # Ensure the directory exists to avoid FileNotFoundError during the test
-        if not os.path.exists(local_file_path):
-            pytest.fail("Local test file not found.")
-
-        df_local = pd.read_json(local_file_path)
+        # Create input DataFrame and upload to Mock S3
+        df_input = pd.DataFrame(test_input)
         wr.s3.to_json(
-            df_local,
-            f"s3://{source_bucket}/{source_key}",
+            df=df_input,
+            path=f"s3://{source_bucket}/{source_key}",
             orient="records",
             lines=False,
-            index=False,
         )
 
         # 3. ACT: Trigger the handler with EventBridge style event
@@ -151,40 +214,24 @@ class TestObfuscator:
 
         lambda_handler(mock_event, None)
 
-        # 4. ASSERT: Read the result from the destination bucket
+        # 4. ASSERT: Read the result from the dest_bucket
         result_df = wr.s3.read_json(
             f"s3://{dest_bucket}/obfuscated/{source_key}", orient="records", lines=False
         )
 
-        # 5. If not exsist, create the local "obfuscated" folder, and save the result there
-        output_dir = "data/obfuscated"
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
+        expected_df = pd.DataFrame(expected_output)
+        # Compare result with the expected output dataframe
+        pdt.assert_frame_equal(result_df, expected_df)
+        # Additional specific assertions
+        assert result_df["name"][1] == "*****"
+        assert result_df["student_id"][0] == 1234
+        assert result_df["course"][1] == "Data Science"
 
-        # Save the result locally for manual inspection
-        output_path = os.path.join(output_dir, "obfuscated_result.json")
-        result_df.to_json(output_path, orient="records", indent=2, index=False)
-
-        print(f"\nSuccess! Find the Obfuscated file here: {output_path}")
-
-        # 6. ASSERT: Validate that PII fields are obfuscated
-        # Check that PII fields are masked and the columns defined
-        # in PII_FIELDS env variable as written in terraform.tfvars
-        # hardcoded here for clarity:["name", "email_address"]
-        for col in ["name", "email_address"]:
-            if col in result_df.columns:
-                assert all(
-                    result_df[col] == "*****"
-                ), f"Column {col} was not obfuscated"
-
-        # Check that one non-PII field (e.g., student_id) is still the same as the original
-        if "student_id" in result_df.columns:
-            assert result_df["student_id"][0] == df_local["student_id"][0]
-
-    def test_lambda_obfuscates_local_parquet_file(self, s3_client):
-        # 1a. SETUP: Mock Buckets
-        source_bucket = "gdpr-source-data-bucket-test"
-        dest_bucket = "gdpr-obfuscated-data-bucket-test"
+    def test_lambda_obfuscates_local_parquet_file(self, s3_client, sample_csv_data):
+        # SETUP - Buckets and env variables
+        source_bucket = "test-source-bucket"
+        dest_bucket = "test-dest-bucket"
+        source_key = "test_data.parquet"
 
         s3_client.create_bucket(
             Bucket=source_bucket,
@@ -195,60 +242,39 @@ class TestObfuscator:
             CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
         )
 
-        # 1b. Configure Environment variables for the Lambda function
         os.environ["DESTINATION_BUCKET"] = dest_bucket
-        # Configure PII fields for dummy.csv has 'name' and 'email_address'
-        os.environ["PII_FIELDS"] = get_pii_from_terraform()
+        os.environ["PII_FIELDS"] = "name,email_address"
 
-        # 2. SEED: Load your ACTUAL local file and upload it to the mock S3
-        source_key = "dummy.parquet"
-        local_file_path = f"data/raw/{source_key}"
+        # SEED - Upload sample_csv_data in Parquet format
+        source_path = f"s3://{source_bucket}/{source_key}"
+        wr.s3.to_parquet(df=sample_csv_data, path=source_path, index=False)
 
-        # Ensure the directory exists to avoid FileNotFoundError during the test
-        if not os.path.exists(local_file_path):
-            pytest.fail("Local test file not found.")
-
-        df_local = pd.read_parquet(local_file_path)
-        wr.s3.to_parquet(df_local, f"s3://{source_bucket}/{source_key}", index=False)
-
-        # 3. ACT: Trigger the handler with EventBridge style event
-        mock_event = {
+        # ACT - Call the lambda_handler with EventBridge style event
+        event = {
             "detail": {"bucket": {"name": source_bucket}, "object": {"key": source_key}}
         }
+        lambda_handler(event, None)
 
-        lambda_handler(mock_event, None)
-
-        # 4. ASSERT: Read the result from the destination bucket
+        # 4. ASSERT - Evaluate the obfuscated Parquet file
         result_df = wr.s3.read_parquet(f"s3://{dest_bucket}/obfuscated/{source_key}")
+        expected_df = sample_csv_data.copy()
+        expected_df["name"] = "*****"
+        expected_df["email_address"] = "*****"
 
-        # 5. If not exsist, create the local "obfuscated" folder, and save the result there
-        output_dir = "data/obfuscated"
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
+        # dtype alignment
+        result_df = result_df.astype(expected_df.dtypes)
+        # Compare result with the expected output dataframe
+        pdt.assert_frame_equal(result_df, expected_df)
 
-        # Save the result locally for manual inspection
-        output_path = os.path.join(output_dir, "obfuscated_result.parquet")
-        result_df.to_parquet(output_path, index=False)
-
-        print(f"\nSuccess! Find the Obfuscated file here: {output_path}")
-
-        # 6. ASSERT: Validate that PII fields are obfuscated
-        # Check that PII fields are masked and the columns defined
-        # in PII_FIELDS env variable as written in terraform.tfvars
-        # hardcoded here for clarity:["name", "email_address"]
-        for col in ["name", "email_address"]:
-            if col in result_df.columns:
-                assert all(
-                    result_df[col] == "*****"
-                ), f"Column {col} was not obfuscated"
-
-        # Check that one non-PII field (e.g., student_id) is still the same as the original
-        if "student_id" in result_df.columns:
-            assert result_df["student_id"][0] == df_local["student_id"][0]
+        # Individual assertions
+        assert result_df["name"].iloc[0] == "*****"
+        assert result_df["student_id"].iloc[0] == 1234
+        assert result_df["course"].iloc[1] == "Data Science"
+        assert result_df["email_address"].iloc[1] == "*****"
 
     def test_lambda_raises_error_if_file_not_found(self, s3_client):
         # Setup: Only create S3 bucket, but NOT place file in it.
-        source_bucket = "gdpr-source-data-bucket-test"
+        source_bucket = "gdpr-source-bucket-test"
         s3_client.create_bucket(
             Bucket=source_bucket,
             CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
@@ -270,32 +296,8 @@ class TestObfuscator:
 
     def test_lambda_raises_error_on_corrupted_csv(self, s3_client):
         # Setup
-        source_bucket = "gdpr-source-data-bucket-test"
-        s3_client.create_bucket(
-            Bucket=source_bucket,
-            CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
-        )
-
-        # Seed: Upload a corrupted CSV file with incorrect content
-        source_key = "corrupted.csv"
-        s3_client.put_object(
-            Bucket=source_bucket,
-            Key=source_key,
-            Body="This is not a valid CSV content, bc it lacks structure!",
-        )
-
-        mock_event = {
-            "detail": {"bucket": {"name": source_bucket}, "object": {"key": source_key}}
-        }
-
-        # Assert: Expect an exception due to incorrect file content
-        with pytest.raises(Exception):
-            lambda_handler(mock_event, None)
-
-    def test_obfuscate_data_unsupported_format_raises_error(self, s3_client):
-        # 1a. Setup S3 buckets
-        source_bucket = "gdpr-source-data-bucket-test"
-        dest_bucket = "gdpr-destination-data-bucket-test"
+        source_bucket = "gdpr-source-bucket-test"
+        dest_bucket = "gdpr-dest-bucket-test"
 
         s3_client.create_bucket(
             Bucket=source_bucket,
@@ -306,19 +308,98 @@ class TestObfuscator:
             CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
         )
 
-        # 1b. Configure Environment variables
         os.environ["DESTINATION_BUCKET"] = dest_bucket
-        os.environ["PII_FIELDS"] = get_pii_from_terraform()
+        os.environ["PII_FIELDS"] = "name,email_address"
 
-        # 2. SEED: UpLoad your an UNSUPPORTED file from your local folder to S3
+        # Seed: Upload a corrupted CSV file with binearis/incorrect content
+        corrupted_content = b"\xff\xfe\xfd\x12"
+
+        source_key = "corrupted.csv"
+        s3_client.put_object(
+            Bucket=source_bucket,
+            Key=source_key,
+            Body=corrupted_content,
+        )
+
+        mock_event = {
+            "detail": {"bucket": {"name": source_bucket}, "object": {"key": source_key}}
+        }
+
+        # Assert: Expect an exception due to incorrect file content
+        with pytest.raises(Exception) as excinfo:
+            lambda_handler(mock_event, None)
+
+        # Opcional: Check the exception message contains
+        assert "codec can't decode byte" in str(excinfo.value)
+
+    def test_lambda_raises_error_no_pii_fields_obfuscated(self, s3_client):
+        # Setup Data
+        headers = ["student_id", "course", "cohort", "graduation_date"]
+        test_input = [
+            [1234, "Software", "2024-03-31", "2024-03-31"],
+            [5678, "Data Science", "2024-01-15", "2024-01-15"],
+        ]
+
+        # Setup
+        source_key = "no_pii_fields.csv"
+        source_bucket = "source-bucket-test"
+        dest_bucket = "dest-bucket-test"
+
+        s3_client.create_bucket(
+            Bucket=source_bucket,
+            CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
+        )
+        s3_client.create_bucket(
+            Bucket=dest_bucket,
+            CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
+        )
+
+        os.environ["DESTINATION_BUCKET"] = dest_bucket
+        os.environ["PII_FIELDS"] = "name,email_address"
+
+        # Create input DataFrame and upload to Mock S3
+        df_input = pd.DataFrame(test_input, columns=headers)
+        wr.s3.to_csv(
+            df=df_input, path=f"s3://{source_bucket}/{source_key}", index=False
+        )
+
+        df_input = pd.DataFrame(test_input, columns=headers)
+        s3_client.put_object(
+            Bucket=source_bucket,
+            Key=source_key,
+            Body=df_input.to_csv(index=False).encode("utf-8"),
+        )
+
+        mock_event = {
+            "detail": {"bucket": {"name": source_bucket}, "object": {"key": source_key}}
+        }
+
+        # Assert: Expect an exception due to no PII fields found
+        with pytest.raises(Exception) as excinfo:
+            lambda_handler(mock_event, None)
+
+        # Opcional: Check the exception message contains
+        assert "No PII columns found to obfuscate." in str(excinfo.value)
+
+    def test_obfuscate_data_unsupported_format_raises_error(self, s3_client):
+        # Setup S3 buckets and env variables
+        source_bucket = "gdpr-source-bucket-test"
+        dest_bucket = "gdpr-destination-bucket-test"
+
+        s3_client.create_bucket(
+            Bucket=source_bucket,
+            CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
+        )
+        s3_client.create_bucket(
+            Bucket=dest_bucket,
+            CreateBucketConfiguration={"LocationConstraint": "eu-west-2"},
+        )
+
+        os.environ["DESTINATION_BUCKET"] = dest_bucket
+        os.environ["PII_FIELDS"] = "name,email_address"
+
+        # SEED: UpLoad an UNSUPPORTED file from your local folder to S3
         source_key = "dummy.txt"
-        local_file_path = f"data/raw/{source_key}"
-
-        # Ensure the directory exists to avoid FileNotFoundError during the test
-        if not os.path.exists(local_file_path):
-            pytest.fail(
-                f"Local test file not found at {local_file_path}. Please create it first."
-            )
 
         s3_client.put_object(
             Bucket=source_bucket,
