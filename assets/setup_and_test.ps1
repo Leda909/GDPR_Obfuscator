@@ -18,7 +18,7 @@ pip install -r requirements.txt
 
 # 4. set environment variables
 Write-Host ">>> Setting PYTHONPATH..." -ForegroundColor Yellow
-$env:PYTHONPATH = "."
+$env:PYTHONPATH = "src;."
 
 # 5. execute pipeline
 Write-Host "`n>>> RUNNING UNIT TESTS (Pytest)..." -ForegroundColor Green
@@ -36,4 +36,14 @@ python -m flake8 --max-line-length=100 src tests
 Write-Host "`n>>> RUNNING FORMATTER (Black)..." -ForegroundColor Green
 python -m black src tests
 
-Write-Host "`n>>> PEP8 compliant pipeline Completed Successfully!" -ForegroundColor Cyan
+Write-Host "`n>>> GENERATING INTEGRATED REPORT (coverage.txt)..." -ForegroundColor Cyan
+
+"--- UNIT TEST COVERAGE REPORT ---" | Out-File -FilePath coverage.txt
+python -m coverage run -m pytest tests
+python -m coverage report -m >> coverage.txt
+"`n--- SECURITY SCAN REPORT (BANDIT) ---" >> coverage.txt
+bandit -lll -r src/ >> coverage.txt 2>&1
+"`n--- VULNERABILITY AUDIT REPORT (PIP-AUDIT) ---" >> coverage.txt
+pip-audit >> coverage.txt 2>&1
+
+Write-Host "`n>>> Pipeline Completed Successfully! Coverage Report created! (PEP8 Compliant)" -ForegroundColor Cyan

@@ -1,16 +1,18 @@
 # Source bucket that need to be anonymized
-resource "aws_s3_bucket" "plain_data_bucket" {
-  bucket = "gdpr-source-data-bucket-${random_id.id.hex}"
-  tags={
-    Name="GDPR Source Data"
+resource "aws_s3_bucket" "ingestion_bucket" {
+  bucket = "gdpr-ingestion-bucket-${random_id.id.hex}"
+  force_destroy = true  # <-- allow to delete non empty at destroy
+  tags = {
+    Name = "GDPR Source S3 Data Bucket"
   }
 }
 
 # Destination bucket for anonymized data - Not necessery - For testing purpose
-resource "aws_s3_bucket" "obfuscated_data_bucket" {
-  bucket = "gdpr-obfuscated-data-bucket-${random_id.id.hex}"
-  tags={
-    Name="GDPR Obfuscated Data"
+resource "aws_s3_bucket" "obfuscated_bucket" {
+  bucket = "gdpr-obfuscated-bucket-${random_id.id.hex}"
+  force_destroy = true  # <-- allow to delete non empty at destroy
+  tags = {
+    Name = "GDPR Obfuscated S3 Data Bucket"
   }
 }
 

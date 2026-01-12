@@ -4,7 +4,7 @@
 
 PROJECT_NAME = Obfuscation-Service
 WD=$(shell pwd)
-PYTHONPATH=${WD}
+PYTHONPATH=${WD}/src:${WD}
 SHELL := /bin/bash
 PYTHON = python
 PIP = pip
@@ -64,6 +64,10 @@ audit:
 	$(call execute_in_env, pip-audit)
 	@echo ">>> Vulnerability audit completed successfully!"
 
+# Run all tests in one
+run-checks: unit-test run-black security-test audit lint
+	@echo ">> All checks passed successfully! Obfuscation-Service is PEP8 compliant! <<"
+
 # Run coverage check and create a coverage.txt file
 check-coverage-txt:
 	@echo ">>> Generating Integrated Quality & Security Report..."
@@ -79,7 +83,3 @@ check-coverage-txt:
 
 	@rm -f .coverage
 	@echo "Integrated report as coverage.txt created successfully!"
-
-# Run all tests in one
-run-checks: unit-test run-black security-test audit lint
-	@echo ">> All checks passed successfully! Obfuscation-Service is PEP8 compliant! <<"

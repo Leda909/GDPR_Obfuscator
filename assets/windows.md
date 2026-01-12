@@ -3,14 +3,6 @@ Launchpad GDPR Obfuscator Service
 
 Run `./assets/setup_and_test.ps1` in the terminal.
 
-* [color code in powershell terminal](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.utility/write-host?view=powershell-7.5)
-
-* [automatate in powershell](https://learn.microsoft.com/en-us/training/paths/powershell/)
-
-* [scripting in powershell](https://learn.microsoft.com/en-us/training/modules/script-with-powershell/)
-
-* [realpython](https://realpython.com/)
-
 # Manual Set Up - WINDOWS VENV (virtual enviorments)
 
 Before running commands, ensure to run this scripts in PowerShell. 
@@ -32,25 +24,30 @@ Open PowerShell as Administrator and run:<br>
 `pip install -r requirements.txt`
 
 You can install dependencies induvisually too in one go:<br>
-`pip install `
+`pip install pytest moto awswrangler pandas boto3 black flake8 bandit pip-audit coverage`
 
 5. PYTHONPATH - here you tell for pc to run everything from your project root<br>
 `$env:PYTHONPATH = "."`
+`$env:PYTHONPATH="src;."`
 
-If you want to be sure that your test run on the right path use *;* :<br>
+If you want to be sure that your test run on the right path use ' $env:PYTHONPATH="."; ' :<br>
 `$env:PYTHONPATH="."; python -m pytest tests/test_obfuscator.py -vv -s --color=yes`
 
 6. Run unit tests:<br>
 Run every tests in test_***.py file  -vv =>   -s => <br>
 `python -m pytest tests/test_obfuscator.py -vv -s --color=yes`
 
-Run a particular unit test within a file:<br>
-``
+Run one particular unit test within one test_file.py
+`python -m pytest tests/test_obfuscator.py::TestObfuscator::test_lambda_obfuscates_local_csv_file -vv -s --color=yes`
+
+Option - Using the -k filter (Easier to type)
+`python -m pytest tests/test_obfuscator.py -k "test_lambda_obfuscates_local_csv_file" -vv -s --color=yes`
+
 
 7. Other tests:
 
     1. **Security Test (Bandit):** Scans code for common security issues (like hardcoded passwords or insecure function calls), [bandit](https://bandit.readthedocs.io/en/latest/)<br>
-    `python -m bandit -lll -r src/`<br>
+    `python -m bandit -lll -r src/ tests/`<br>
 
     2. **Code Formatter (Black):** Automatically reformats your code to comply with the PEP 8 style guide, [black](https://black.readthedocs.io/en/stable/)<br>
     `python -m black src tests`
@@ -69,4 +66,31 @@ If you want to see exactly which lines of your Lambda are covered by your tests,
 Run Coverage and Create a coverage.txt file: <br>
 `python -m coverage run -m pytest tests; python -m coverage report -m > coverage.txt`
 
+**Whole Security, Audit and Coverage Tracking**:<br>
+```bash
+$env:PYTHONPATH="src;."; python -m coverage run -m pytest tests/test_obfuscator.py; `
+echo "--- COVERAGE REPORT ---" > assets/optional/coverage.txt; `
+$env:PYTHONPATH="."; python -m coverage report -m >> assets/optional/coverage.txt; `
+echo "`n--- SECURITY SCAN (BANDIT) ---" >> assets/optional/coverage.txt; `
+$env:PYTHONPATH="."; python -m bandit -lll -r src/ tests/test_obfuscator.py >> assets/optional/coverage.txt; `
+echo "`n--- VULNERABILITY CHECK (AUDIT) ---" >> assets/optional/coverage.txt; `
+$env:PYTHONPATH="."; python -m pip_audit >> assets/optional/coverage.txt
+```
+
 9. Deactivate venv: `deactivate`
+
+# To auto test terraform
+
+you can run: **tflint** in the terraform folder
+`choco install tflint`
+
+
+## Resources
+
+* [color code in powershell terminal](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.utility/write-host?view=powershell-7.5)
+
+* [automatate in powershell](https://learn.microsoft.com/en-us/training/paths/powershell/)
+
+* [scripting in powershell](https://learn.microsoft.com/en-us/training/modules/script-with-powershell/)
+
+* [realpython](https://realpython.com/)

@@ -3,19 +3,19 @@
 # ------------------------------
 
 # Define role: allows lambda to assume this role
- data "aws_iam_policy_document" "trust_policy" {
-   statement {
-     effect = "Allow"
-     principals {
+data "aws_iam_policy_document" "trust_policy" {
+  statement {
+    effect = "Allow"
+    principals {
       type        = "Service"
       identifiers = ["lambda.amazonaws.com"]
     }
 
-     actions = ["sts:AssumeRole"]
+    actions = ["sts:AssumeRole"]
   }
 }
 
-# Create the IAM Role for Obfuscator Lambda
+# Create the IAM Role for Lambda
 resource "aws_iam_role" "lambda_role" {
   name_prefix        = "gdpr_obfuscator_lambda_role"
   assume_role_policy = data.aws_iam_policy_document.trust_policy.json
@@ -37,10 +37,10 @@ data "aws_iam_policy_document" "lambda_combined_S3_cloudewatch_policy_doc" {
       "s3:ListBucket"
     ]
     resources = [
-      "${aws_s3_bucket.plain_data_bucket.arn}",
-      "${aws_s3_bucket.obfuscated_data_bucket.arn}",
-      "${aws_s3_bucket.plain_data_bucket.arn}/*",
-      "${aws_s3_bucket.obfuscated_data_bucket.arn}/*"
+      "${aws_s3_bucket.ingestion_bucket.arn}",
+      "${aws_s3_bucket.obfuscated_bucket.arn}",
+      "${aws_s3_bucket.ingestion_bucket.arn}/*",
+      "${aws_s3_bucket.obfuscated_bucket.arn}/*"
     ]
   }
 
@@ -83,24 +83,24 @@ resource "aws_iam_role_policy_attachment" "lambda_s3_write_policy_attachment" {
 # ------------------------------
 
 resource "aws_s3_bucket_notification" "bucket_eventbridge_signal" {
-  bucket      = aws_s3_bucket.plain_data_bucket.id
+  bucket      = aws_s3_bucket.ingestion_bucket.id
   eventbridge = true
 }
 
 # ------------------------------
-# EventBridge Rule: Trigger Obfuscator Lambda on S3 Object Created Events
+# EventBridge Rule: Trigger Lambda on S3 Object Created Events
 # ------------------------------
 
-# Define the pattern: Trigger when an object is created in the plain bucket
+# Define the pattern: Trigger when an object is created in the ingestion bucket
 resource "aws_cloudwatch_event_rule" "s3_object_upload_rule" {
-  name_prefix = "s3-object-uploaded-rule-"
-  description = "Trigger Obfuscator Lambda on S3 Object Created Events"
+  name_prefix   = "s3-object-uploaded-rule-"
+  description   = "Trigger Lambda on S3 Object Created Events"
   event_pattern = <<PATTERN
 {
   "source": ["aws.s3"],
   "detail-type": ["Object Created"],
   "detail": {
-    "bucket": { "name": ["${aws_s3_bucket.plain_data_bucket.id}"]}
+    "bucket": { "name": ["${aws_s3_bucket.ingestion_bucket.id}"]},
     "object": { 
       "key": [ 
         { "suffix": ".csv" },
@@ -120,24 +120,14 @@ resource "aws_cloudwatch_event_target" "lambda_target" {
   arn       = aws_lambda_function.gdpr_obfuscator_lambda.arn
 }
 
-# Grant EventBridge permission to invoke the Lambda
+# ------------------------------
+# Lambda Permission: Allow for EventBridge to invoke Lambda
+# ------------------------------
 resource "aws_lambda_permission" "allow_eventbridge" {
   statement_id  = "AllowExecutionFromEventBridge"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.gdpr_obfuscator_lambda.function_name
   principal     = "events.amazonaws.com"
-  source_arn    = aws_cloudwatch_event_rule.s3_upload_rule.arn
-}
-
-# ------------------------------
-# Lambda Permission: Allow for S3 to invoke The Obfuscator Lambda
-# ------------------------------
-
-resource "aws_lambda_permission" "allow_eventbridge" {
-  statement_id  = "AllowExecutionFromEventBridge"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.gdpr_obfuscator_lambda.function_name
-  principal     = "s3.amazonaws.com"
 
   # specify the source ARN to limit permission to specific bucket
   source_arn = aws_cloudwatch_event_rule.s3_object_upload_rule.arn

@@ -1,11 +1,17 @@
 # test data files
 *data/obfuscated
+*data/test/example.csv
 *data/test/sample.json
 *data/test/sample.parquet
 *assets/optional
+deployment
+data/aws
 
 # terraform 
 terraform.tfvars
+*.terraform
+**.hcl
+**.tfstate
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

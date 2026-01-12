@@ -1,23 +1,19 @@
+--- COVERAGE REPORT ---
 Name                       Stmts   Miss  Cover   Missing
 --------------------------------------------------------
-src/obfuscator.py             64      0   100%
-tests/test_obfuscator.py     151      0   100%
+src\obfuscator.py             78      0   100%
+tests\test_obfuscator.py     169      0   100%
 --------------------------------------------------------
-TOTAL                        215      0   100%
+TOTAL                        247      0   100%
 
---- SECURITY SCAN REPORT (BANDIT) ---
-[main]	INFO	profile include tests: None
-[main]	INFO	profile exclude tests: None
-[main]	INFO	cli include tests: None
-[main]	INFO	cli exclude tests: None
-[main]	INFO	running on Python 3.13.2
-Run started:2026-01-01 20:38:53.503288+00:00
+--- SECURITY SCAN (BANDIT) ---
+Run started:2026-01-02 00:24:08.721923+00:00
 
 Test results:
 	No issues identified.
 
 Code scanned:
-	Total lines of code: 90
+	Total lines of code: 113
 	Total lines skipped (#nosec): 0
 	Total potential issues skipped due to specifically being disabled (e.g., #nosec BXXX): 0
 
@@ -34,5 +30,4 @@ Run metrics:
 		High: 0
 Files skipped (0):
 
---- VULNERABILITY AUDIT REPORT (PIP-AUDIT) ---
-No known vulnerabilities found
+--- VULNERABILITY CHECK (AUDIT) ---
