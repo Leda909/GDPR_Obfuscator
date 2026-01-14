@@ -347,3 +347,5 @@ The format of the events; JSON schema.
 * [YouTube - How to Install ASW SDK For Pandas on AWS Lambda Function](https://www.youtube.com/watch?v=Ofwblf_K408&t=46s)
 
 * [awswranggler](https://aws-sdk-pandas.readthedocs.io/en/3.2.1/stubs/awswrangler.s3.read_csv.html)
+
+* [deploy portable lambda](https://aws.amazon.com/blogs/compute/developing-portable-aws-lambda-functions/)
